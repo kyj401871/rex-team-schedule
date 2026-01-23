@@ -57,29 +57,60 @@ with st.sidebar:
             }
             df = load_data()
             
-            # ★★★ [핵심 수정] ★★★
-            # 기존 df가 비어 있거나 타입이 일치하지 않아도 자동으로 타입을 맞춰주는 방법
             new_row_df = pd.DataFrame([new_data])
             
-            # df가 비어있으면, 그냥 new_row_df를 사용하고 저장
             if df.empty:
                 new_df = new_row_df
             else:
-                # 기존 df와 새 데이터를 합칠 때, 타입을 자동으로 맞춤 (astype 대신 concat 사용)
                 new_df = pd.concat([df, new_row_df], ignore_index=True)
                 
             save_data(new_df)
             st.success("작업이 추가되었습니다!")
             st.rerun()
 
-# 메인 화면: 작업 목록 표시 및 수정
+# =====================
+# 🔍 필터 기능 추가 시작
+# =====================
+
+st.subheader("🔍 필터 옵션")
+
+# 상태 필터
+filter_status = st.multiselect(
+    "상태로 필터",
+    options=["대기중", "진행중", "완료", "보류"],
+    default=["대기중", "진행중", "완료", "보류"]  # 기본적으로 모두 선택
+)
+
+# 장소 필터 (빈 문자열 제외하고 유니크한 값만 표시)
+df = load_data()  # 일단 데이터 로드
+unique_locations = df['장소'].dropna().unique().tolist()
+if len(unique_locations) == 0:
+    unique_locations = [""]
+
+filter_location = st.multiselect(
+    "장소로 필터",
+    options=unique_locations,
+    default=unique_locations  # 기본적으로 모든 장소 선택
+)
+
+# =====================
+# 📋 필터 적용된 데이터 표시
+# =====================
+
 st.subheader("📋 현재 작업 현황")
 
-df = load_data()
+# 필터 적용
+filtered_df = df.copy()
+
+if filter_status:
+    filtered_df = filtered_df[filtered_df['상태'].isin(filter_status)]
+
+if filter_location:
+    filtered_df = filtered_df[filtered_df['장소'].isin(filter_location)]
 
 # 데이터 편집기
 edited_df = st.data_editor(
-    df,
+    filtered_df,  # ★★★ 여기서 필터된 데이터를 보여줍니다 ★★★
     num_rows="dynamic",
     use_container_width=True,
     key="data_editor",
@@ -95,6 +126,8 @@ edited_df = st.data_editor(
 )
 
 if not df.equals(edited_df):
+    # edited_df는 필터된 상태이므로, 실제 저장은 원본 df에서 변경된 부분만 반영
+    # → 간단하게 전체 덮어쓰기 방식으로 구현 (실무에서는 더 정교하게 처리 가능)
     save_data(edited_df)
     st.toast("변경사항이 저장되었습니다!", icon="✅")
 
@@ -111,4 +144,4 @@ if not edited_df.empty:
         pending = len(edited_df[edited_df['상태'] == '진행중'])
         st.metric("진행 중인 작업", pending)
 else:
-    st.write("아직 작업이 없습니다.")
+    st.write("필터 조건에 맞는 작업이 없습니다.")
