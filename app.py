@@ -5,11 +5,11 @@ import uuid
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
-# 1. 설정
+# 1. 기본 설정
 st.set_page_config(page_title="팀 작업 관리자", layout="wide", initial_sidebar_state="expanded")
 CSV_FILE = 'tasks.csv'
 
-# 2. 데이터 함수 (ID 관리)
+# 2. 데이터 함수
 def load_data():
     if not os.path.exists(CSV_FILE):
         return pd.DataFrame(columns=["ID", "작업내용", "담당자", "장소", "상태", "작성일"])
@@ -20,11 +20,10 @@ def load_data():
             if col not in df.columns:
                 df[col] = ""
         
-        # ID가 없으면 생성
         if "ID" not in df.columns:
             df["ID"] = [str(uuid.uuid4()) for _ in range(len(df))]
         
-        # 순서 정렬 (ID는 맨 앞으로)
+        # ID를 맨 앞으로
         cols = ["ID"] + required_cols
         return df[cols]
     except:
@@ -70,11 +69,11 @@ with st.sidebar:
 # 📊 메인 화면
 # ==========================================
 st.title("📝 공용 팀 작업 관리 보드")
-st.caption("💡 삭제할 행의 **체크박스**를 선택하고 아래 **빨간 삭제 버튼**을 누르세요.")
+st.caption("💡 '작업 내용' 왼쪽의 **체크박스**를 누르고 삭제 버튼을 사용하세요.")
 
 gb = GridOptionsBuilder.from_dataframe(st.session_state.df)
 
-# 기본 설정
+# 기본 컬럼 설정 (엑셀 필터 적용)
 gb.configure_default_column(
     resizable=True,
     sortable=True,
@@ -83,9 +82,18 @@ gb.configure_default_column(
     filterParams={'buttons': ['reset', 'apply'], 'closeOnApply': True}
 )
 
-# 컬럼 설정 (ID 숨김)
-gb.configure_column("ID", hide=True) 
-gb.configure_column("작업내용", headerName="작업 내용", flex=2)
+# 1. ID 컬럼 숨김
+gb.configure_column("ID", hide=True)
+
+# ★★★ [핵심 수정] 작업내용 컬럼에 체크박스 강제 부착 ★★★
+gb.configure_column("작업내용", 
+    headerName="작업 내용", 
+    flex=2,
+    checkboxSelection=True,        # 행마다 체크박스 표시
+    headerCheckboxSelection=True,  # 헤더에 '전체 선택' 체크박스 표시
+    headerCheckboxSelectionFilteredOnly=True # 필터링된 것만 전체선택
+)
+
 gb.configure_column("담당자", headerName="담당자", flex=1)
 gb.configure_column("장소", headerName="장소", flex=1)
 gb.configure_column("상태", headerName="상태", flex=1,
@@ -93,8 +101,8 @@ gb.configure_column("상태", headerName="상태", flex=1,
                     cellEditorParams={'values': ["대기중", "진행중", "완료", "보류"]})
 gb.configure_column("작성일", headerName="작성일", flex=1, editable=False)
 
-# 체크박스
-gb.configure_selection(selection_mode="multiple", use_checkbox=True)
+# 선택 모드 설정 (use_checkbox=False로 변경하여 중복 방지)
+gb.configure_selection(selection_mode="multiple", use_checkbox=False)
 gb.configure_pagination(paginationPageSize=10)
 grid_options = gb.build()
 
@@ -113,9 +121,9 @@ grid_response = AgGrid(
 )
 
 # ==========================================
-# 🗑️ 삭제 버튼 (위치 이동: 저장 로직보다 먼저 실행)
+# 🗑️ 삭제 버튼
 # ==========================================
-st.write("") # 여백 추가
+st.write("")
 col_btn1, col_btn2 = st.columns([1, 4])
 
 with col_btn1:
@@ -132,7 +140,7 @@ with col_btn1:
         if not selected_df.empty:
             current_df = st.session_state.df
             
-            # ID 기반 삭제 (빈 행도 정확히 삭제됨)
+            # ID로 삭제
             if 'ID' in selected_df.columns:
                 ids_to_delete = selected_df['ID'].tolist()
                 current_df = current_df[~current_df['ID'].isin(ids_to_delete)]
@@ -142,7 +150,7 @@ with col_btn1:
                 st.toast("삭제되었습니다.", icon="🗑️")
                 st.rerun()
             else:
-                # 만약 ID가 로드가 안 된 경우 내용 기반 삭제 시도
+                 # ID 로드 실패 시 백업 로직
                 for index, row in selected_df.iterrows():
                      mask = (current_df['작업내용'] == row['작업내용']) & (current_df['작성일'] == row['작성일'])
                      current_df = current_df[~mask]
@@ -150,10 +158,10 @@ with col_btn1:
                 st.session_state.df = current_df
                 st.rerun()
         else:
-            st.warning("삭제할 항목을 체크해주세요.")
+            st.warning("먼저 표 안의 체크박스를 선택해주세요.")
 
 # ==========================================
-# ⚡ 데이터 자동 동기화 (버튼 뒤로 이동)
+# ⚡ 데이터 자동 동기화
 # ==========================================
 raw_data = grid_response.get('data')
 
@@ -166,7 +174,10 @@ else:
 
 if not current_grid_df.empty:
     try:
-        # 내용 비교
+        # ID 컬럼이 있는지 확인 후 비교
+        cols_to_compare = [c for c in current_grid_df.columns if c != "ID"]
+        
+        # 간단 비교를 위해 내용만 체크
         if not current_grid_df.reset_index(drop=True).equals(st.session_state.df.reset_index(drop=True)):
             save_data(current_grid_df)
             st.session_state.df = current_grid_df
