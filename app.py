@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-import uuid  # ★ 고유 ID 생성을 위한 라이브러리 추가
+import uuid
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
@@ -9,23 +9,24 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 st.set_page_config(page_title="팀 작업 관리자", layout="wide", initial_sidebar_state="expanded")
 CSV_FILE = 'tasks.csv'
 
-# 2. 데이터 함수 (ID 관리 기능 추가)
+# 2. 데이터 함수 (ID 관리)
 def load_data():
     if not os.path.exists(CSV_FILE):
         return pd.DataFrame(columns=["ID", "작업내용", "담당자", "장소", "상태", "작성일"])
     try:
         df = pd.read_csv(CSV_FILE)
-        # 필수 컬럼 확인
         required_cols = ["작업내용", "담당자", "장소", "상태", "작성일"]
         for col in required_cols:
             if col not in df.columns:
                 df[col] = ""
         
-        # ★ 중요: ID 컬럼이 없으면 새로 만듭니다 (기존 데이터 호환)
+        # ID가 없으면 생성
         if "ID" not in df.columns:
             df["ID"] = [str(uuid.uuid4()) for _ in range(len(df))]
-            
-        return df
+        
+        # 순서 정렬 (ID는 맨 앞으로)
+        cols = ["ID"] + required_cols
+        return df[cols]
     except:
         return pd.DataFrame(columns=["ID", "작업내용", "담당자", "장소", "상태", "작성일"])
 
@@ -49,9 +50,9 @@ with st.sidebar:
         
         submitted = st.form_submit_button("작업 추가", use_container_width=True)
 
-        if submitted:  # 내용이 비어있어도 추가 가능하게 변경 (필요시 task_name 조건 추가)
+        if submitted:
             new_data = {
-                "ID": str(uuid.uuid4()), # ★ 고유 ID 생성
+                "ID": str(uuid.uuid4()),
                 "작업내용": task_name,
                 "담당자": assignee,
                 "장소": location,
@@ -73,7 +74,7 @@ st.caption("💡 삭제할 행의 **체크박스**를 선택하고 아래 **빨�
 
 gb = GridOptionsBuilder.from_dataframe(st.session_state.df)
 
-# 기본 설정 (엑셀 필터 포함)
+# 기본 설정
 gb.configure_default_column(
     resizable=True,
     sortable=True,
@@ -82,8 +83,8 @@ gb.configure_default_column(
     filterParams={'buttons': ['reset', 'apply'], 'closeOnApply': True}
 )
 
-# 컬럼 설정
-gb.configure_column("ID", hide=True) # ★ ID는 화면에 안 보이게 숨김
+# 컬럼 설정 (ID 숨김)
+gb.configure_column("ID", hide=True) 
 gb.configure_column("작업내용", headerName="작업 내용", flex=2)
 gb.configure_column("담당자", headerName="담당자", flex=1)
 gb.configure_column("장소", headerName="장소", flex=1)
@@ -110,3 +111,74 @@ grid_response = AgGrid(
     enable_enterprise_modules=True, 
     key="aggrid_main"
 )
+
+# ==========================================
+# 🗑️ 삭제 버튼 (위치 이동: 저장 로직보다 먼저 실행)
+# ==========================================
+st.write("") # 여백 추가
+col_btn1, col_btn2 = st.columns([1, 4])
+
+with col_btn1:
+    if st.button("🗑️ 선택된 작업 삭제", type="primary", use_container_width=True):
+        selected = grid_response.get('selected_rows')
+        
+        if selected is None:
+            selected_df = pd.DataFrame()
+        elif isinstance(selected, pd.DataFrame):
+            selected_df = selected
+        else:
+            selected_df = pd.DataFrame(selected)
+            
+        if not selected_df.empty:
+            current_df = st.session_state.df
+            
+            # ID 기반 삭제 (빈 행도 정확히 삭제됨)
+            if 'ID' in selected_df.columns:
+                ids_to_delete = selected_df['ID'].tolist()
+                current_df = current_df[~current_df['ID'].isin(ids_to_delete)]
+                
+                save_data(current_df)
+                st.session_state.df = current_df
+                st.toast("삭제되었습니다.", icon="🗑️")
+                st.rerun()
+            else:
+                # 만약 ID가 로드가 안 된 경우 내용 기반 삭제 시도
+                for index, row in selected_df.iterrows():
+                     mask = (current_df['작업내용'] == row['작업내용']) & (current_df['작성일'] == row['작성일'])
+                     current_df = current_df[~mask]
+                save_data(current_df)
+                st.session_state.df = current_df
+                st.rerun()
+        else:
+            st.warning("삭제할 항목을 체크해주세요.")
+
+# ==========================================
+# ⚡ 데이터 자동 동기화 (버튼 뒤로 이동)
+# ==========================================
+raw_data = grid_response.get('data')
+
+if isinstance(raw_data, pd.DataFrame):
+    current_grid_df = raw_data
+elif raw_data:
+    current_grid_df = pd.DataFrame(raw_data)
+else:
+    current_grid_df = pd.DataFrame()
+
+if not current_grid_df.empty:
+    try:
+        # 내용 비교
+        if not current_grid_df.reset_index(drop=True).equals(st.session_state.df.reset_index(drop=True)):
+            save_data(current_grid_df)
+            st.session_state.df = current_grid_df
+    except:
+        pass
+
+# ==========================================
+# 📈 통계
+# ==========================================
+st.divider()
+c1, c2, c3 = st.columns(3)
+df_now = st.session_state.df
+c1.metric("총 작업", len(df_now))
+c2.metric("완료", len(df_now[df_now['상태']=='완료']))
+c3.metric("진행중", len(df_now[df_now['상태']=='진행중']))
