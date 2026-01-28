@@ -91,22 +91,50 @@ if st.session_state.df.empty:
 else:
     display_df = st.session_state.df
 
+
 # AgGrid 설정
 gb = GridOptionsBuilder.from_dataframe(display_df)
-gb.configure_default_column(resizable=True, sortable=True, editable=True, filter=True)
+
+# 1. 텍스트 필터 설정: '포함'만 남기기
+text_filter_params = {
+    'filterOptions': ['contains'],   # 오직 'contains' 옵션만 활성화
+    'suppressAndOrCondition': True,  # AND/OR 조건 숨기기 (심플하게 한 줄만 입력)
+    'debounceMs': 200                # 입력 후 0.2초 뒤 검색 (성능 최적화)
+}
+
+# 2. 기본 컬럼 설정 (필터 파라미터 적용)
+gb.configure_default_column(
+    resizable=True, 
+    sortable=True, 
+    editable=True, 
+    filter=True,
+    filterParams=text_filter_params  # 여기에 위에서 만든 설정 적용
+)
+
 gb.configure_column("ID", hide=True) # ID 숨김
 gb.configure_column("작업내용", headerName="작업 내용", flex=2, 
                     checkboxSelection=True, headerCheckboxSelection=True)
 gb.configure_column("담당자", headerName="담당자", flex=1)
 gb.configure_column("장소", headerName="장소", flex=1)
+
+# 상태 컬럼은 드롭다운 선택이지만, 필터는 텍스트 검색을 유지하거나 별도 설정 가능
 gb.configure_column("상태", headerName="상태", flex=1,
                     cellEditor='agSelectCellEditor', 
                     cellEditorParams={'values': ["대기중", "진행중", "완료", "보류"]})
 gb.configure_column("작성일", headerName="작성일", flex=1, editable=False)
 
+# 3. 한글화 설정 (필요한 문구만 심플하게)
+korean_locale = {
+    "contains": "포함",       # Contains -> 포함
+    "filterOoo": "검색...",   # 입력창 Placeholder
+    "noRowsToShow": "표시할 데이터가 없습니다."
+}
+gb.configure_grid_options(localeText=korean_locale)
+
 gb.configure_selection(selection_mode="multiple", use_checkbox=False)
 gb.configure_pagination(paginationPageSize=10)
 grid_options = gb.build()
+
 
 # 테이블 그리기
 grid_response = AgGrid(
