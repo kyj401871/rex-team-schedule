@@ -1,9 +1,27 @@
 import streamlit as st
 import pandas as pd
 import os
+import sys # sys 모듈 추가
 import uuid
 from datetime import datetime
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+
+# ==========================================
+# 🛠️ 경로 설정 (EXE 실행 시 데이터 보존을 위해 필수)
+# ==========================================
+if getattr(sys, 'frozen', False):
+    # exe로 실행될 때: exe 파일이 있는 폴더 위치
+    application_path = os.path.dirname(sys.executable)
+else:
+    # 파이썬으로 실행될 때: 현재 파일 위치
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+# CSV 파일 경로를 절대 경로로 지정
+CSV_FILE = os.path.join(application_path, 'tasks.csv')
+# ==========================================
+
+# 1. 기본 설정
+st.set_page_config(page_title="팀 작업 관리자", layout="wide", initial_sidebar_state="expanded")
 
 # 1. 기본 설정
 st.set_page_config(page_title="팀 작업 관리자", layout="wide", initial_sidebar_state="expanded")
